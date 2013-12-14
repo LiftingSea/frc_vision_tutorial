@@ -1,6 +1,10 @@
 from cv2 import *
 import numpy as np
 import sys
+from pynetworktables import *
+
+# wpilib crashes if you don't do this.. 
+SmartDashboard.init()
 
 class ImageProcessor:
   hue_thresh = 100
@@ -53,6 +57,7 @@ class ImageProcessor:
     self.h_clipped = self.threshold_in_range(self.h, thresh-delta, thresh+delta)
     imshow(self.h_title, self.h_clipped)
     self.update_combined()
+    SmartDashboard.PutString("hue threshold:",str(thresh))
 
   def update_sat_threshold(self, thresh):
     delta = 67
