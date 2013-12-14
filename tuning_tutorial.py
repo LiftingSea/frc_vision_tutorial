@@ -27,7 +27,8 @@ from pynetworktables import *
 SmartDashboard.init()
 #pretend the robot is on the network reporting its heading to the SmartDashboard,
 #  then let the SmartDashboard user modify it and send it back to this code to simulate movement.
-SmartDashboard.PutNumber('Robot Heading (Deg):', 0.0)
+robot_heading_title = 'Robot Heading (Deg):'
+SmartDashboard.PutNumber(robot_heading_title, 0.0)
 
 class ImageProcessor:
   #all these values could be put into the SmartDashboard for live tuning as conditions change.
@@ -62,7 +63,7 @@ class ImageProcessor:
     print('horiz_threshold = ',self.horiz_threshold)
 
   def process(self):
-    self.robot_heading = SmartDashboard.GetNumber('Robot Heading (Deg):')
+    self.robot_heading = SmartDashboard.GetNumber(robot_heading_title)
     self.img            = imread(self.img_path)
     drawing             = np.zeros(self.img.shape, dtype=np.uint8)
     self.source_title   = self.img_path         
@@ -157,22 +158,27 @@ class ImageProcessor:
 
 
   def aim(self):
-    #Check FRC 'Getting Started with Vision Processing.pdf' proposed algorithm, to confirm these calculations.
-    #How to add elevation response?
-
-    self.robot_heading = SmartDashboard.GetNumber('Robot Heading (Deg):')
-    polygon, x, y, w, h = self.selected_target
-    x += w/2.0
-    x = 2.0 * (x/w)-1.0
-    y += h/2.0
-    y = -(2.0*(y/h) - 1.0)
-    self.target_bearing = (x*self.degrees_horiz_field_of_view/2.0 + self.robot_heading - self.degrees_sighting_offset)%360.0
-    self.target_range   = (self.inches_top_target_height - self.inches_camera_height)/math.tan((y*self.degrees_vert_field_of_view/2.0 + self.degrees_camera_pitch)* math.pi/180.0)
+    self.robot_heading    = SmartDashboard.GetNumber(robot_heading_title)
+    polygon, x, y, w, h   = self.selected_target
+    self.target_bearing   = self.get_bearing(x, y, w, h)   
+    self.target_range     = self.get_range(x, y, w, h)     
+    self.target_elevation = self.get_elevation(x, y, w, h) 
     SmartDashboard.PutNumber("Target Range:",    self.target_range)
     SmartDashboard.PutNumber("Target Bearing:",  self.target_bearing)
     SmartDashboard.PutNumber("Target Elevation:",self.target_elevation)
+    SmartDashboard.PutString("Target: ","Acquired!")
+
+  def get_bearing(self, x, y, w, h):
+    return 0.0
+
+  def get_range(self, x, y, w, h):
+    return 0.0
+
+  def get_elevation(self, x, y, w, h):
+    return 0.0
 
   def reset_targeting(self):
+    SmartDashboard.PutString("Target: ","lost...")
     self.drawing                = self.img.copy() 
     self.selected_target        = None            
     self.highest_found_so_far_x = None            
