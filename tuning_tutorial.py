@@ -12,17 +12,25 @@ class ImageProcessor:
   val_thresh = 135
   max_thresh = 255
   hsv_calced = False
+  morph_close_iterations = 9
+  kernel     = getStructuringElement(MORPH_RECT, (2,2), anchor=(1,1)) 
+  target_min_width  = 20
+  target_max_width  = 200
+  max_target_aspect_ratio  = 1.0
+  min_target_aspect_ratio  = 0.5
 
   def __init__(self, img_path):
     self.img_path = img_path
 
   def process(self):
-    self.img       = imread(self.img_path)
+    self.img            = imread(self.img_path)
+    drawing             = np.zeros(self.img.shape, dtype=np.uint8)
     self.source_title   = self.img_path         
     self.h_title        = "hue"                 
     self.s_title        = "sat"                 
     self.v_title        = "val"                 
-    self.combined_title = "combined_thresholds" 
+    self.combined_title = "Combined + Morphed" 
+    self.targets_title  = "Targets" 
 
     hsv = cvtColor(self.img, cv.CV_BGR2HSV)
     self.h, self.s, self.v = split(hsv)
@@ -31,6 +39,8 @@ class ImageProcessor:
     self.update_val_threshold(self.val_thresh)
     self.hsv_calced = True
     self.update_combined()
+
+
     self.layout_result_windows(self.h,self.s,self.v)
    
     waitKey(0)
@@ -42,11 +52,13 @@ class ImageProcessor:
     imshow(self.s_title, s)
     imshow(self.v_title, v)
     imshow(self.combined_title, self.combined)
+    imshow(self.targets_title, self.img)
 
     moveWindow(self.h_title, pos_x*1, pos_y*0);
     moveWindow(self.s_title, pos_x*0, pos_y*1);
     moveWindow(self.v_title, pos_x*1, pos_y*1);
     moveWindow(self.combined_title, pos_x*2, pos_y*0);
+    moveWindow(self.targets_title, pos_x*2, pos_y*1);
 
     createTrackbar( "Hue Threshold:", self.source_title, self.hue_thresh, self.max_thresh, self.update_hue_threshold);
     createTrackbar( "Sat Threshold:", self.source_title, self.sat_thresh, self.max_thresh, self.update_sat_threshold);
@@ -71,7 +83,6 @@ class ImageProcessor:
     imshow(self.v_title, self.v_clipped)
     self.update_combined()
 
-
   def threshold_in_range(self, img, low, high):
     unused, above = threshold(img, low, self.max_thresh, THRESH_BINARY)
     unused, below = threshold(img, high, self.max_thresh, THRESH_BINARY_INV)
@@ -81,8 +92,40 @@ class ImageProcessor:
     #combine all the masks together to get their overlapping regions.
     if (self.hsv_calced): 
       self.combined = bitwise_and(self.h_clipped, bitwise_and(self.s_clipped, self.v_clipped))
-      imshow(self.combined_title, self.combined)
+      self.combined = morphologyEx(src=self.combined, op=MORPH_CLOSE, kernel=self.kernel, iterations=self.morph_close_iterations)   
+      imshow(self.combined_title, self.combined )
 
+      self.contoured      = self.combined.copy() #bin_copy
+      contours, heirarchy = findContours(self.contoured, RETR_LIST, CHAIN_APPROX_TC89_KCOS)
+      contours = [convexHull(c.astype(np.float32),clockwise=True,returnPoints=True) for c in contours]
+      
+      polygon_tuples = self.contours_to_polygon_tuples(contours)        
+      polygons       = [self.unpack_polygon(t) for t in polygon_tuples] 
+      drawContours(self.img, [p.astype(np.int32) for p in polygons], -1, (0,0,255), thickness=7)
+      imshow(self.targets_title, self.img)
+
+      square = None
+      highest = sys.maxint
+
+  def unpack_polygon(self,t):
+    p,x,y,w,h = t
+    return p
+
+  def contours_to_polygon_tuples(self, contours):
+    #not sure why we are converting to polygons...
+    polygon_tuples = []
+    for c in contours:
+      x, y, w, h = boundingRect(c)
+      if self.aspect_ratio_and_size_correct(w,h):
+        p = approxPolyDP(c, 20, False)
+        polygon_tuples.append((p,x,y,w,h))
+    return polygon_tuples 
+
+  def aspect_ratio_and_size_correct(self, width, height):
+    ratio = float(height)/width
+    return ratio < self.max_target_aspect_ratio and ratio > self.min_target_aspect_ratio and width > self.target_min_width and width < self.target_max_width
+
+ 
 if '__main__'==__name__:
   try:
     img_path = sys.argv[1]
