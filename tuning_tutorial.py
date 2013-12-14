@@ -2,7 +2,22 @@
 #Standing on the shoulders (or at least the code) of teams 294, 341, and 2423,
 #the goal of this tutorial is to help students learn how to tune their vision targeting algorithms.
 #Don't forget to start up the SmartDashboard to interact with the algorithm in real time.
-#Could be extended to use video instead of still imagery to tune for changing conditions.  
+#java -jar SmartDashboard ip 127.0.0.1, for example, if running on this same host.
+#Some possible assignments:
+#  Add more tuning knobs to gui for threshold window delta values.
+#  Add signals from SmartDashboard to modify selection algorithm from highest to 
+#    left-most, right-most, or lowest targets.
+#  Update to use video instead of still imagery to tune for changing lighting and conditions.  
+#  Measure response times over network.
+#  Measure bandwidth over network.
+#  Add SmartDashboard controls to limit thresholding and merging to single channels 
+#    and measure timing improvements.
+#  Tune camera image acquisition settings on real targets for various lighting conditions.
+#  Fill in methods for target bearing, range, and elevation, re-tuned for our live camera and actual targets.
+#  Re-write selection rules and color tuning for images from other past FRC competitions.
+#  Write robot response code to act on targeting info, connect and see what happens.
+#  Write robot code to send its heading to the vision processing code via NetworkTables.
+
 from cv2 import *
 import numpy as np
 import sys
@@ -10,24 +25,36 @@ import math
 from pynetworktables import *
 
 SmartDashboard.init()
+#pretend the robot is on the network reporting its heading to the SmartDashboard,
+#  then let the SmartDashboard user modify it and send it back to this code to simulate movement.
+SmartDashboard.PutNumber('Robot Heading (Deg):', 0.0)
 
 class ImageProcessor:
+  #all these values could be put into the SmartDashboard for live tuning as conditions change.
   hue_thresh = 070
   sat_thresh = 180
   val_thresh = 253
   max_thresh = 255
   hsv_calced = False
-  morph_close_iterations = 9
   kernel     = getStructuringElement(MORPH_RECT, (2,2), anchor=(1,1)) 
-  target_min_width  = 20
-  target_max_width  = 200
+  morph_close_iterations = 9
+  target_min_width       = 20
+  target_max_width       = 200
   max_target_aspect_ratio  = 1.0
   min_target_aspect_ratio  = 0.5
   selected_target_color    = (0,0,255)
   passed_up_target_color   = (255,255,0)
   possible_target_color    = (255,0,255)
-  vert_threshold  = math.tan(math.radians(90-20)) 
-  horiz_threshold = math.tan(math.radians(20)) 
+  vert_threshold           = math.tan(math.radians(90-20)) 
+  horiz_threshold          = math.tan(math.radians(20)) 
+  degrees_horiz_field_of_view = 47.0
+  degrees_vert_field_of_view  = 480.0/640*degrees_horiz_field_of_view
+  inches_camera_height        = 54.0
+  inches_top_target_height    = 98 + 2 + 98
+  degrees_camera_pitch        = 21.0
+  degrees_sighting_offset     = -1.55
+  robot_heading               = 0.0
+
 
   def __init__(self, img_path):
     self.img_path = img_path
@@ -35,6 +62,7 @@ class ImageProcessor:
     print('horiz_threshold = ',self.horiz_threshold)
 
   def process(self):
+    self.robot_heading = SmartDashboard.GetNumber('Robot Heading (Deg):')
     self.img            = imread(self.img_path)
     drawing             = np.zeros(self.img.shape, dtype=np.uint8)
     self.source_title   = self.img_path         
@@ -107,7 +135,7 @@ class ImageProcessor:
       self.combined = morphologyEx(src=self.combined, op=MORPH_CLOSE, kernel=self.kernel, iterations=self.morph_close_iterations)   
       imshow(self.combined_title, self.combined )
 
-      self.contoured      = self.combined.copy() #bin_copy
+      self.contoured      = self.combined.copy() 
       contours, heirarchy = findContours(self.contoured, RETR_LIST, CHAIN_APPROX_TC89_KCOS)
       contours = [convexHull(c.astype(np.float32),clockwise=True,returnPoints=True) for c in contours]
       
@@ -122,18 +150,27 @@ class ImageProcessor:
       if self.selected_target is not None:
         self.draw_target(self.highest_found_so_far_x, self.highest_found_so_far, self.selected_target_color)
         drawContours(self.drawing, [self.unpack_polygon(self.selected_target).astype(np.int32)], -1, self.selected_target_color, thickness=10)
+        self.aim()
 
       imshow(self.targets_title, self.drawing)
-
-      SmartDashboard.PutString("Potential Targets:",        str(len(polygons)))
-      self.aim()
+      SmartDashboard.PutNumber("Potential Targets:", len(polygons))
 
 
   def aim(self):
-    #insert calculations for range, bearing and elevation for selected_target
-    SmartDashboard.PutString("Target Range:",    str(self.target_range))
-    SmartDashboard.PutString("Target Bearing:",  str(self.target_bearing))
-    SmartDashboard.PutString("Target Elevation:",str(self.target_elevation))
+    #Check FRC 'Getting Started with Vision Processing.pdf' proposed algorithm, to confirm these calculations.
+    #How to add elevation response?
+
+    self.robot_heading = SmartDashboard.GetNumber('Robot Heading (Deg):')
+    polygon, x, y, w, h = self.selected_target
+    x += w/2.0
+    x = 2.0 * (x/w)-1.0
+    y += h/2.0
+    y = -(2.0*(y/h) - 1.0)
+    self.target_bearing = (x*self.degrees_horiz_field_of_view/2.0 + self.robot_heading - self.degrees_sighting_offset)%360.0
+    self.target_range   = (self.inches_top_target_height - self.inches_camera_height)/math.tan((y*self.degrees_vert_field_of_view/2.0 + self.degrees_camera_pitch)* math.pi/180.0)
+    SmartDashboard.PutNumber("Target Range:",    self.target_range)
+    SmartDashboard.PutNumber("Target Bearing:",  self.target_bearing)
+    SmartDashboard.PutNumber("Target Elevation:",self.target_elevation)
 
   def reset_targeting(self):
     self.drawing                = self.img.copy() 
