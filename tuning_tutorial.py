@@ -59,8 +59,6 @@ class ImageProcessor:
 
   def __init__(self, img_path):
     self.img_path = img_path
-    print('vert_threshold = ',self.vert_threshold)
-    print('horiz_threshold = ',self.horiz_threshold)
 
   def process(self):
     self.robot_heading = SmartDashboard.GetNumber(robot_heading_title)
